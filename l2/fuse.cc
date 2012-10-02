@@ -241,12 +241,18 @@ void
 fuseserver_open(fuse_req_t req, fuse_ino_t ino,
      struct fuse_file_info *fi)
 {
+
+  //at this point only this implementation will do 
+	fuse_reply_open(req, fi);
+
+/*
   // You fill this in
 #if 0
   fuse_reply_open(req, fi);
 #else
   fuse_reply_err(req, ENOSYS);
 #endif
+*/
 }
 
 void

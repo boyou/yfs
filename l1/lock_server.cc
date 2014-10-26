@@ -35,7 +35,7 @@ lock_server::stat(int clt, lock_protocol::lockid_t lid, int &r)
 lock_protocol::status
 lock_server::acquire(int clt, lock_protocol::lockid_t lid, int &r)
 {
-  fprintf(stderr, "client %d is asking for lock %d\n", clt, lid);
+  fprintf(stderr, "client %d is asking for lock %ld\n", clt, lid);
   pthread_mutex_lock(&mutex);
   if (lock_cnt.find(lid) == lock_cnt.end())
   {
@@ -46,7 +46,7 @@ lock_server::acquire(int clt, lock_protocol::lockid_t lid, int &r)
   {
       pthread_cond_wait(&lock_cond[lid], &mutex);
   }
-  fprintf(stderr, "lock %d granted to client %d\n", lid, clt);
+  fprintf(stderr, "lock %ld granted to client %d\n", lid, clt);
   lock_held[lid] = true;
   lock_cnt[lid] -= 1;
   ++nacquire;
@@ -57,9 +57,9 @@ lock_server::acquire(int clt, lock_protocol::lockid_t lid, int &r)
 lock_protocol::status
 lock_server::release(int clt, lock_protocol::lockid_t lid, int &r)
 {
-  fprintf(stderr, "client %d is releasing lock %d\n", clt, lid);
+  fprintf(stderr, "client %d is releasing lock %ld\n", clt, lid);
   pthread_mutex_lock(&mutex);
-  fprintf(stderr, "lock %d released by client %d\n", lid, clt);
+  fprintf(stderr, "lock %ld released by client %d\n", lid, clt);
   lock_held[lid] = false;
   if (lock_cnt[lid] > 0)
   {

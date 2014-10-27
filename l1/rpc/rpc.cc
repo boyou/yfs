@@ -529,6 +529,8 @@ rpcs::dispatch(djob_t *j)
 			// if we don't know about this clt_nonce, create a cleanup object
 			if (reply_window_.find(h.clt_nonce) == reply_window_.end()) {
 				assert (reply_window_[h.clt_nonce].size() == 0); // create
+                assert (request_window_[h.clt_nonce].size() == 0);
+                assert (last_xid_rep_[h.clt_nonce] == 0);
 				jsl_log(JSL_DBG_2,
 						"rpcs::dispatch: new client %u xid %d chan %d, total clients %d\n", 
 						h.clt_nonce, h.xid, c->channo(), (int)reply_window_.size());
@@ -560,6 +562,7 @@ rpcs::dispatch(djob_t *j)
 				updatestat(proc);
 			}
 
+            add_request(h.clt_nonce, h.xid);
 			rh.ret = f->fn(req, rep);
 			assert(rh.ret >= 0 || 
 					rh.ret == rpc_const::unmarshal_args_failure);
@@ -613,6 +616,31 @@ rpcs::add_reply(unsigned int clt_nonce, unsigned int xid,
 		char *b, int sz)
 {
 	ScopedLock rwl(&reply_window_m_);
+    reply_t r(xid);
+    r.buf = b;
+    r.sz = sz;
+    for (std::list <reply_t>::iterator it = reply_window_[clt_nonce].begin();
+            it != reply_window_[clt_nonce].end(); ++it) {
+        if (it->xid > xid) {
+            reply_window_[clt_nonce].insert(it, r);
+            return;
+        }
+    }
+    reply_window_[clt_nonce].push_back(r);
+}
+
+void
+rpcs::add_request(unsigned int clt_nonce, unsigned int xid)
+{
+	ScopedLock rwl(&reply_window_m_);
+    for (std::list <unsigned int>::iterator it = request_window_[clt_nonce].begin();
+            it != request_window_[clt_nonce].end(); ++it) {
+        if (*it > xid) {
+            request_window_[clt_nonce].insert(it, xid);
+            return;
+        }
+    }
+    request_window_[clt_nonce].push_back(xid);
 }
 
 void
@@ -637,7 +665,44 @@ rpcs::checkduplicate_and_update(unsigned int clt_nonce, unsigned int xid,
 {
 	ScopedLock rwl(&reply_window_m_);
 
-	return NEW;
+    // new client
+    if (reply_window_.find(clt_nonce) == reply_window_.end()) {
+        return NEW;
+    }
+
+    std::list <reply_t> &replies = reply_window_[clt_nonce];
+    std::list <unsigned int> &requests = request_window_[clt_nonce];
+    // compress the window
+    while (!replies.empty() && replies.front().xid <= xid_rep) {
+        free(replies.front().buf);
+        replies.pop_front();
+    }
+    while (!requests.empty() && requests.front() <= xid_rep) {
+        requests.pop_front();
+    }
+    last_xid_rep_[clt_nonce] = std::max(last_xid_rep_[clt_nonce], xid_rep);
+
+    // judge
+    if (last_xid_rep_[clt_nonce] >= xid) {
+        return FORGOTTEN;
+    }
+    for (std::list <reply_t>::iterator it = replies.begin(); it != replies.end(); ++it) {
+        if (it->xid == xid) {
+            *b = it->buf;
+            *sz = it->sz;
+            return DONE;
+        } else if (it->xid > xid) {
+            break;
+        }
+    }
+    for (std::list <unsigned int>::iterator it = requests.begin(); it != requests.end(); ++it) {
+        if (*it == xid) {
+            return INPROGRESS;
+        } else if (*it > xid) {
+            break;
+        }
+    }
+    return NEW;
 }
 
 //rpc handler
